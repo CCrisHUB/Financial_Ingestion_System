@@ -2,10 +2,10 @@
 #"""
 #McCoy PDF ETL Pipeline
 #Date: 2026-09-08
-#Version: 2.0
+#Version: 2.2
 #Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
 #"""
-#__version__ = "2.0"
+#__version__ = "2.2"
 #__date__ = "2026-09-08"
 
 import os
@@ -21,9 +21,12 @@ CORE_DIR = 'core_files'
 INPUT_DIR = 'input_data'
 
 def get_latest_file(directory, prefix, extension):
-    files = [os.path.join(directory, f) for f in os.listdir(directory) if f.startswith(prefix) and f.endswith(extension)]
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith(extension)]
     if not files: return None
-    return sorted(files, key=os.path.getmtime, reverse=True)[0]
+    def extract_version(filename):
+        match = re.search(r'_v(\d+)\.', filename)
+        return int(match.group(1)) if match else 0
+    return os.path.join(directory, sorted(files, key=extract_version, reverse=True)[0])
 
 print("Initializing McCoy PDF ETL Pipeline...")
 
@@ -328,7 +331,10 @@ for cat in CONST_STATIC_MONTHLY_BILLS:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat]
     if not cat_df.empty:
         if cat not in accumulators: accumulators[cat] = {}
-        accumulators[cat][latest_month] = cat_df.iloc[-1]['Abs_Amount']
+        accumulators[cat][latest_month] = accumulators[cat].get(latest_month, 0.0) - cat_df['Amount'].sum()
+    if cat in accumulators:
+        culled_data = {m: val for m, val in accumulators[cat].items() if datetime.strptime(m, "%Y-%m") >= cutoff_date}
+        accumulators[cat] = culled_data
 
 # --- GENERATE FINAL PAYLOAD ---
 today_str = datetime.now().strftime('%Y-%m-%d')
@@ -364,7 +370,7 @@ for cat in CONST_SEASONAL_MONTHLY_BILLS:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat]
     if not cat_df.empty:
         month_series = cat_df['Date'].str.extract(r'([A-Za-z]{3})', expand=False)
-        monthly_sum = cat_df.groupby(month_series)['Abs_Amount'].sum()
+        monthly_sum = -cat_df.groupby(month_series)['Amount'].sum()
         new_seas = {m: f"${a:.2f}" for m, a in monthly_sum.items()}
         if cat in historical_payload:
             old_seas_str = historical_payload[cat].strip('[]')
