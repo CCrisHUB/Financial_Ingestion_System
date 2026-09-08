@@ -1,3 +1,13 @@
+mccoy_etl.py
+"""
+McCoy PDF ETL Pipeline
+Date: 2026-09-08
+Version: 2.0
+Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
+"""
+__version__ = "2.0"
+__date__ = "2026-09-08"
+
 import os
 import re
 import json
@@ -318,9 +328,7 @@ for cat in CONST_STATIC_MONTHLY_BILLS:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat]
     if not cat_df.empty:
         if cat not in accumulators: accumulators[cat] = {}
-        for _, r in cat_df.iterrows():
-            amt, abs_amt = r['Amount'], r['Abs_Amount']
-            accumulators[cat][latest_month] = accumulators[cat].get(latest_month, 0.0) + (abs_amt if amt < 0 else -abs_amt)
+        accumulators[cat][latest_month] = cat_df.iloc[-1]['Abs_Amount']
 
 # --- GENERATE FINAL PAYLOAD ---
 today_str = datetime.now().strftime('%Y-%m-%d')
