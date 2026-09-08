@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-08
-#Version: 2.0
+#Version: 2.2
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-#__version__ = "2.0"
+#__version__ = "2.2"
 #__date__ = "2026-09-08"
 
 import os
@@ -21,14 +21,24 @@ CORE_DIR = 'core_files'
 INPUT_DIR = 'input_data'
 
 def get_latest_file(directory, prefix, extension):
-    files = [os.path.join(directory, f) for f in os.listdir(directory) if f.startswith(prefix) and f.endswith(extension)]
+    files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith(extension)]
     if not files: return None
-    return sorted(files, key=os.path.getmtime, reverse=True)[0]
+    def extract_version(filename):
+        match = re.search(r'_v(\d+)\.', filename)
+        return int(match.group(1)) if match else 0
+    return os.path.join(directory, sorted(files, key=extract_version, reverse=True)[0])
 
 def get_keyword_file(directory, keyword, extension):
-    files = [os.path.join(directory, f) for f in os.listdir(directory) if keyword.lower() in f.lower() and f.endswith(extension)]
+    files = [f for f in os.listdir(directory) if keyword.lower() in f.lower() and f.endswith(extension)]
     if not files: return None
-    return sorted(files, key=os.path.getmtime, reverse=True)[0]
+    def extract_version(filename):
+        match = re.search(r'_v(\d+)\.', filename)
+        return int(match.group(1)) if match else 0
+    # Fallback to mtime only if versioning isn't standard on keyword files, but prioritize version if it exists
+    try:
+        return os.path.join(directory, sorted(files, key=extract_version, reverse=True)[0])
+    except Exception:
+        return sorted([os.path.join(directory, f) for f in files], key=os.path.getmtime, reverse=True)[0]
 
 print("Initializing Chase ETL Pipeline...")
 
@@ -359,7 +369,10 @@ for cat in CONST_STATIC_MONTHLY_BILLS:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat]
     if not cat_df.empty:
         if cat not in accumulators: accumulators[cat] = {}
-        accumulators[cat][latest_month] = cat_df.iloc[-1]['Abs_Amount']
+        accumulators[cat][latest_month] = accumulators[cat].get(latest_month, 0.0) - cat_df['Amount'].sum()
+    if cat in accumulators:
+        culled_data = {m: val for m, val in accumulators[cat].items() if datetime.strptime(m, "%Y-%m") >= cutoff_date}
+        accumulators[cat] = culled_data
 
 # --- GENERATE PAYLOAD ---
 today_str = datetime.now().strftime('%Y-%m-%d')
@@ -386,7 +399,7 @@ payload_out += "\n- CONST_SEASONAL_MONTHLY_BILLS:\n"
 for cat in CONST_SEASONAL_MONTHLY_BILLS:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat]
     if not cat_df.empty:
-        monthly_sum = cat_df.groupby(cat_df['Date'].dt.strftime('%b'))['Abs_Amount'].sum()
+        monthly_sum = -cat_df.groupby(cat_df['Date'].dt.strftime('%b'))['Amount'].sum()
         new_seas = {m: f"${a:.2f}" for m, a in monthly_sum.items()}
         if cat in historical_payload:
             old_seas_str = historical_payload[cat].strip('[]')
