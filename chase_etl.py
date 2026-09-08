@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-08
-#Version: 2.2
+#Version: 2.3
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-#__version__ = "2.2"
+#__version__ = "2.3"
 #__date__ = "2026-09-08"
 
 import os
@@ -97,6 +97,11 @@ processed_buffer = json.loads(buf_match.group(1).strip()) if buf_match else {"Ch
 
 # --- PARSE PAYLOAD ---
 historical_payload = {}
+for cat in CONST_STATIC_MONTHLY_BILLS: historical_payload[cat] = "[Amount: $0.00]"
+for cat in CONST_VARIABLE_SPEND: historical_payload[cat] = "[Historical_Monthly_Average: $0.00]"
+for cat in CONST_NON_LINEAR_EXPENSES: historical_payload[cat] = "[Due_Month: 1] [Last_Paid_Amount: $0.00]"
+for cat in CONST_SEASONAL_MONTHLY_BILLS: historical_payload[cat] = "[Pending: $0.00]"
+
 with open(payload_file, 'r', encoding='utf-8') as f:
     for line in f:
         m = re.match(r'^\s*\*\s*([^:]+):\s*(.+)', line)
@@ -176,7 +181,7 @@ if not amazon_df.empty:
 
 if not amazon_df.empty:
     for i, chase_row in merged_df.iterrows():
-        if 'amazon' in str(chase_row['Description']).lower() or 'amzn' in str(chase_row['Description']).lower():
+        if pd.isna(merged_df.at[i, 'Product_Name']) and ('amazon' in str(chase_row['Description']).lower() or 'amzn' in str(chase_row['Description']).lower()):
             amt = chase_row['Abs_Amount']
             c_date = chase_row['Date']
             # Match on exact amount, within 21 days (LOOSE MATCH)
@@ -337,8 +342,10 @@ for index, row in merged_df.iterrows():
                 break
 
 # --- CULL LEDGER ---
-CONST_MAX_LEDGER_ROWS = 150
-protected_cats = CONST_NON_LINEAR_EXPENSES + CONST_STATIC_MONTHLY_BILLS + CONST_SEASONAL_MONTHLY_BILLS
+max_rows_match = re.search(r'-\s*CONST_MAX_LEDGER_ROWS\s*=\s*(\d+)', constants_raw)
+CONST_MAX_LEDGER_ROWS = int(max_rows_match.group(1)) if max_rows_match else 150
+protected_cats = CONST_NON_LINEAR_EXPENSES + CONST_STATIC_MONTHLY_BILLS + CONST_SEASONAL_MONTHLY_BILLS + CONST_VARIABLE_SPEND
+
 if len(ledger_rows) > CONST_MAX_LEDGER_ROWS:
     ledger_rows.sort(key=lambda x: (x['Last_Seen'], x['Hit_Count']))
     excess = len(ledger_rows) - CONST_MAX_LEDGER_ROWS
@@ -385,16 +392,21 @@ payload_out += "\n- CONST_STATIC_MONTHLY_BILLS:\n"
 for cat in CONST_STATIC_MONTHLY_BILLS:
     if cat in accumulators and latest_month in accumulators[cat]:
         historical_payload[cat] = f"[Amount: ${accumulators[cat][latest_month]:.2f}]"
-    if cat in historical_payload: payload_out += f"  * {cat}: {historical_payload[cat]}\n"
+    payload_out += f"  * {cat}: {historical_payload[cat]}\n"
+
 payload_out += "\n- CONST_VARIABLE_SPEND:\n"
 for cat in CONST_VARIABLE_SPEND:
     if cat in accumulators and '_Historical_Average' in accumulators[cat]:
         payload_out += f"  * {cat}: [Historical_Monthly_Average: ${accumulators[cat]['_Historical_Average']:.2f}]\n"
+    else:
+        payload_out += f"  * {cat}: {historical_payload[cat]}\n"
+
 payload_out += "\n- CONST_NON_LINEAR_EXPENSES:\n"
 for cat in CONST_NON_LINEAR_EXPENSES:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat].sort_values('Date')
     if not cat_df.empty: historical_payload[cat] = f"[Due_Month: {cat_df.iloc[-1]['Date'].month}] [Last_Paid_Amount: ${cat_df.iloc[-1]['Abs_Amount']:.2f}]"
-    if cat in historical_payload: payload_out += f"  * {cat}: {historical_payload[cat]}\n"
+    payload_out += f"  * {cat}: {historical_payload[cat]}\n"
+
 payload_out += "\n- CONST_SEASONAL_MONTHLY_BILLS:\n"
 for cat in CONST_SEASONAL_MONTHLY_BILLS:
     cat_df = valid_df[valid_df['Mapped_Label'] == cat]
@@ -408,7 +420,7 @@ for cat in CONST_SEASONAL_MONTHLY_BILLS:
             new_seas = old_seas
         seas_str = ", ".join([f"{m}: {a}" for m, a in new_seas.items()])
         historical_payload[cat] = f"[{seas_str}]"
-    if cat in historical_payload: payload_out += f"  * {cat}: {historical_payload[cat]}\n"
+    payload_out += f"  * {cat}: {historical_payload[cat]}\n"
 payload_out += "# [END COPY HERE]\n================================================================================\n"
 
 # --- GENERATE LEDGER ---
