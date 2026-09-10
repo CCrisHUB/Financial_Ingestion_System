@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.3 (Graceful Degradation & ANSI UX)
+#Version: 3.6.4 (Robust Amazon CSV Header Parsing)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.3"
+__version__ = "3.6.4"
 __date__ = "2026-09-10"
 
 import os
@@ -151,17 +151,23 @@ def ingest_amazon(order_file, refund_file):
         try: df = pd.read_csv(filepath)
         except Exception: return pd.DataFrame()
         
+        col_map = {str(c).strip().lower(): c for c in df.columns}
+        
         if is_refund:
-            date_col = 'Refund Date' if 'Refund Date' in df.columns else 'Creation Date'
-            amt_col = 'Refund Amount' if 'Refund Amount' in df.columns else None
-            prod_col = 'Reversal Reason' if 'Reversal Reason' in df.columns else None
+            date_col = col_map.get('refund date', col_map.get('creation date', col_map.get('date')))
+            amt_col = col_map.get('refund amount', col_map.get('total amount', col_map.get('total')))
+            prod_col = col_map.get('reversal reason', col_map.get('title', col_map.get('product name', col_map.get('items'))))
             ship_col = None
         else:
-            date_col = 'Order Date' if 'Order Date' in df.columns else None
-            amt_col = next((c for c in ['Total Charged', 'Total Owed', 'Total Amount', 'Item Total'] if c in df.columns), None)
-            if not amt_col: amt_col = next((c for c in df.columns if 'total' in c.lower() or 'owed' in c.lower()), None)
-            prod_col = 'Product Name' if 'Product Name' in df.columns else None
-            ship_col = 'Shipment Date' if 'Shipment Date' in df.columns else None
+            date_col = col_map.get('order date', col_map.get('date'))
+            amt_col = col_map.get('total owed', col_map.get('total amount', col_map.get('item total', col_map.get('total'))))
+            if not amt_col:
+                for c_lower, c_orig in col_map.items():
+                    if ('total' in c_lower or 'owed' in c_lower or 'amount' in c_lower) and not any(x in c_lower for x in ['discount', 'tax', 'subtotal', 'promotion']):
+                        amt_col = c_orig
+                        break
+            prod_col = col_map.get('product name', col_map.get('title', col_map.get('item name', col_map.get('items'))))
+            ship_col = col_map.get('shipment date', col_map.get('ship date'))
 
         if not (date_col and amt_col): return pd.DataFrame()
 
