@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.2 (Intermediate Ledger Prefix Fix)
+#Version: 3.6.3 (Graceful Degradation & ANSI UX)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.2"
+__version__ = "3.6.3"
 __date__ = "2026-09-10"
 
 import os
@@ -50,19 +50,28 @@ def get_keyword_file(directory, keyword, extension):
         return sorted([os.path.join(directory, f) for f in files], key=os.path.getmtime, reverse=True)[0]
 
 def discover_files():
-    chase_file = get_latest_file(INPUT_DIR, 'Chase', '.csv')
-    amz_order = get_keyword_file(INPUT_DIR, 'order', '.csv')
-    amz_refund = get_keyword_file(INPUT_DIR, 'refund', '.csv')
-    ledger_file = get_latest_file(CORE_DIR, 'Financial_Mapping_Ledger', '.txt')
-    payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_FINAL', '.txt')
-    const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
+    while True:
+        chase_file = get_latest_file(INPUT_DIR, 'Chase', '.csv')
+        amz_order = get_keyword_file(INPUT_DIR, 'order', '.csv')
+        amz_refund = get_keyword_file(INPUT_DIR, 'refund', '.csv')
+        ledger_file = get_latest_file(CORE_DIR, 'Financial_Mapping_Ledger', '.txt')
+        payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_FINAL', '.txt')
+        const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
 
-    if not chase_file: fatal_error("Missing Chase CSV in 20_Statements_Current folder.")
-    if not ledger_file: fatal_error("Missing Financial_Mapping_Ledger in 00_CORE_Files folder.")
-    if not payload_file: fatal_error("Missing Ingestion_Expense_Payload_FINAL in 00_CORE_Files folder.")
-    if not const_file: fatal_error("Missing GEM_Financial_Ingestion_Constants in 00_CORE_Files folder.")
-    
-    return chase_file, amz_order, amz_refund, ledger_file, payload_file, const_file
+        missing = []
+        if not chase_file: missing.append("Chase CSV in 20_Statements_Current")
+        if not ledger_file: missing.append("Financial_Mapping_Ledger in 00_CORE_Files")
+        if not payload_file: missing.append("Ingestion_Expense_Payload_FINAL in 00_CORE_Files")
+        if not const_file: missing.append("GEM_Financial_Ingestion_Constants in 00_CORE_Files")
+
+        if missing:
+            print("\n\033[91m[MISSING FILES DETECTED]\033[0m")
+            for m in missing: print(f"- {m}")
+            retry = input("\033[96mPlace missing files in directories and press ENTER to retry (or 'Q' to quit): \033[0m").strip().upper()
+            if retry == 'Q': raise SystemExit("User aborted.")
+            continue
+
+        return chase_file, amz_order, amz_refund, ledger_file, payload_file, const_file
 
 def load_constants(filepath):
     with open(filepath, 'r', encoding='utf-8') as f: raw = f.read()
