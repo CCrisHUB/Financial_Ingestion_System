@@ -158,7 +158,7 @@ def ingest_amazon(order_file, refund_file):
             ship_col = None
         else:
             date_col = 'Order Date' if 'Order Date' in df.columns else None
-            amt_col = next((c for c in ['Total Owed', 'Total Amount', 'Item Total'] if c in df.columns), None)
+            amt_col = next((c for c in ['Total Charged', 'Total Owed', 'Total Amount', 'Item Total'] if c in df.columns), None)
             if not amt_col: amt_col = next((c for c in df.columns if 'total' in c.lower() or 'owed' in c.lower()), None)
             prod_col = 'Product Name' if 'Product Name' in df.columns else None
             ship_col = 'Shipment Date' if 'Shipment Date' in df.columns else None
