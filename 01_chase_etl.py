@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.1 (Explicit Intermediate State Naming)
+#Version: 3.6.2 (Intermediate Ledger Prefix Fix)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.1"
+__version__ = "3.6.2"
 __date__ = "2026-09-10"
 
 import os
@@ -474,7 +474,7 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
     # --- LEDGER ---
     l_match = re.search(r'_v(\d+)\.txt', os.path.basename(ledger_file))
     l_ver = int(l_match.group(1)) + 1 if l_match else 1
-    new_ledger_filename = f"Financial_Mapping_Ledger_Intermediate_{today_str}_v{l_ver}.txt"
+    new_ledger_filename = f"Intermediate_Mapping_Ledger_{today_str}_v{l_ver}.txt"
 
     ledger_out = f"{new_ledger_filename}\n" + "=" * 80 + "\nMERCHANT & PAYEE MAPPING LEDGER\n"
     ledger_out += f"Date: {today_str} (Version {l_ver})\nRole: Deterministic Dictionary for CSV/PDF Transaction Mapping & Batch Accumulator\n"
