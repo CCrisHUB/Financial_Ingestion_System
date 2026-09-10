@@ -2,10 +2,10 @@
 #"""
 #McCoy PDF ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.2 (Intermediate Ledger Prefix Fix)
+#Version: 3.6.3 (Graceful Degradation & ANSI UX)
 #Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.2"
+__version__ = "3.6.3"
 __date__ = "2026-09-10"
 
 import os
@@ -41,17 +41,26 @@ def get_latest_file(directory, prefix, extension):
     return os.path.join(directory, sorted(files, key=extract_version, reverse=True)[0])
 
 def discover_files():
-    mccoy_file = get_latest_file(INPUT_DIR, 'McCoy', '.pdf')
-    ledger_file = get_latest_file(CORE_DIR, 'Intermediate_Mapping_Ledger', '.txt')
-    payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_Chase', '.txt')
-    const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
+    while True:
+        mccoy_file = get_latest_file(INPUT_DIR, 'McCoy', '.pdf')
+        ledger_file = get_latest_file(CORE_DIR, 'Intermediate_Mapping_Ledger', '.txt')
+        payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_Chase', '.txt')
+        const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
 
-    if not mccoy_file: fatal_error("Missing McCoy PDF in 20_Statements_Current folder.")
-    if not ledger_file: fatal_error("Missing Intermediate_Mapping_Ledger in 00_CORE_Files folder.")
-    if not payload_file: fatal_error("Missing Ingestion_Expense_Payload_Chase in 00_CORE_Files folder.")
-    if not const_file: fatal_error("Missing GEM_Financial_Ingestion_Constants in 00_CORE_Files folder.")
-    
-    return mccoy_file, ledger_file, payload_file, const_file
+        missing = []
+        if not mccoy_file: missing.append("McCoy PDF in 20_Statements_Current")
+        if not ledger_file: missing.append("Intermediate_Mapping_Ledger in 00_CORE_Files")
+        if not payload_file: missing.append("Ingestion_Expense_Payload_Chase in 00_CORE_Files")
+        if not const_file: missing.append("GEM_Financial_Ingestion_Constants in 00_CORE_Files")
+
+        if missing:
+            print("\n\033[91m[MISSING FILES DETECTED]\033[0m")
+            for m in missing: print(f"- {m}")
+            retry = input("\033[96mPlace missing files in directories and press ENTER to retry (or 'Q' to quit): \033[0m").strip().upper()
+            if retry == 'Q': raise SystemExit("User aborted.")
+            continue
+
+        return mccoy_file, ledger_file, payload_file, const_file
 
 def load_constants(filepath):
     with open(filepath, 'r', encoding='utf-8') as f: raw = f.read()
@@ -184,18 +193,26 @@ def extract_transactions(raw_text, regex_patterns):
     return df[df['Amount'] < 0].copy() # Drop deposits
 
 def validate_checksum(df):
-    print("\n" + "="*80)
-    user_input = input("Enter the exact Withdrawals line from the PDF (e.g., '8 Withdrawals = 4,453.37'): ").strip()
-    checksum_match = re.search(r'Withdrawals\s*=\s*(\d{1,3}(?:,\d{3})*\.\d{2})', user_input, re.IGNORECASE)
-    if not checksum_match: fatal_error("Invalid Checksum format entered.")
+    while True:
+        print("\n" + "="*80)
+        user_input = input("\033[96mEnter the exact Withdrawals line from the PDF (e.g., '8 Withdrawals = 4,453.37') or 'Q' to quit: \033[0m").strip()
+        if user_input.upper() == 'Q': raise SystemExit("User aborted.")
 
-    expected_total = float(checksum_match.group(1).replace(',', ''))
-    calculated_total = df['Abs_Amount'].sum()
+        checksum_match = re.search(r'Withdrawals\s*=\s*(\d{1,3}(?:,\d{3})*\.\d{2})', user_input, re.IGNORECASE)
+        if not checksum_match:
+            print("\033[91m[ERROR] Invalid Checksum format entered. Please try again.\033[0m")
+            continue
 
-    if abs(expected_total - calculated_total) > 0.02:
-        print(f"\n[CHECKSUM FAILURE]\nExpected: ${expected_total:.2f}\nCalculated: ${calculated_total:.2f}")
-        fatal_error("Checksum Validation Failed. Extracted math does not match PDF total.")
-    print("Checksum Passed!")
+        expected_total = float(checksum_match.group(1).replace(',', ''))
+        calculated_total = df['Abs_Amount'].sum()
+
+        if abs(expected_total - calculated_total) > 0.02:
+            print(f"\n\033[91m[CHECKSUM FAILURE]\nExpected: ${expected_total:.2f}\nCalculated: ${calculated_total:.2f}\033[0m")
+            print("\033[93m[WARNING] Extracted math does not match PDF total. Please verify your input.\033[0m")
+            continue
+
+        print("\033[92mChecksum Passed!\033[0m")
+        break
 
 # ==============================================================================
 # 3. MAPPING & EXCEPTION HANDLING FUNCTIONS
