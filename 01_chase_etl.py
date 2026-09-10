@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.4 (Robust Amazon CSV Header Parsing)
+#Version: 3.6.5 (Hybrid Raw-Text Fallback Parser)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.4"
+__version__ = "3.6.5"
 __date__ = "2026-09-10"
 
 import os
@@ -13,6 +13,8 @@ import re
 import json
 import subprocess
 import pandas as pd
+import csv
+import io
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
@@ -190,34 +192,56 @@ def ingest_amazon(order_file, refund_file):
         return parsed.dropna(subset=['Total_Amount', 'Date'])
 
     amazon_frames = []
-    if order_file: amazon_frames.append(parse_amazon_raw(order_file, is_refund=False))
-    if refund_file: amazon_frames.append(parse_amazon_raw(refund_file, is_refund=True))
-    return pd.concat(amazon_frames, ignore_index=True) if amazon_frames else pd.DataFrame()
+    raw_text = ""
+    if order_file:
+        amazon_frames.append(parse_amazon_raw(order_file, is_refund=False))
+        with open(order_file, 'r', encoding='utf-8', errors='ignore') as f: raw_text += f.read() + "\n"
+    if refund_file:
+        amazon_frames.append(parse_amazon_raw(refund_file, is_refund=True))
+        with open(refund_file, 'r', encoding='utf-8', errors='ignore') as f: raw_text += f.read() + "\n"
+    return pd.concat(amazon_frames, ignore_index=True) if amazon_frames else pd.DataFrame(), raw_text
 
-def merge_amazon_data(chase_df, amazon_df):
+def merge_amazon_data(chase_df, amazon_df, raw_amazon_text):
     merged_df = chase_df.copy()
     merged_df['Product_Name'] = None
 
-    if not amazon_df.empty:
-        for i, chase_row in merged_df.iterrows():
-            if 'amazon' in str(chase_row['Description']).lower() or 'amzn' in str(chase_row['Description']).lower():
-                amt = chase_row['Abs_Amount']
-                c_date = chase_row['Date']
-                matches = amazon_df[(amazon_df['Abs_Amount'] == amt) & ((amazon_df['Join_Date'] - c_date).dt.days.abs() <= 5)]
-                if not matches.empty:
-                    merged_df.at[i, 'Product_Name'] = matches.iloc[0]['Product_Name']
-                    amazon_df = amazon_df.drop(matches.index[0])
+    amazon_rows = []
+    if raw_amazon_text:
+        reader = csv.reader(io.StringIO(raw_amazon_text))
+        for row in reader: amazon_rows.append(row)
 
-    if not amazon_df.empty:
-        for i, chase_row in merged_df.iterrows():
-            if pd.isna(merged_df.at[i, 'Product_Name']) and ('amazon' in str(chase_row['Description']).lower() or 'amzn' in str(chase_row['Description']).lower()):
-                amt = chase_row['Abs_Amount']
-                c_date = chase_row['Date']
+    for i, chase_row in merged_df.iterrows():
+        if 'amazon' in str(chase_row['Description']).lower() or 'amzn' in str(chase_row['Description']).lower():
+            amt = chase_row['Abs_Amount']
+            c_date = chase_row['Date']
+
+            if not amazon_df.empty:
                 matches = amazon_df[(amazon_df['Abs_Amount'] == amt) & ((amazon_df['Join_Date'] - c_date).dt.days.abs() <= 21)]
                 if not matches.empty:
                     merged_df.at[i, 'Product_Name'] = matches.iloc[0]['Product_Name']
                     amazon_df = amazon_df.drop(matches.index[0])
-                    
+                    continue
+
+            if amazon_rows:
+                amount_str = f"{amt:.2f}"
+                amount_str_no_zero = f"{amt:g}"
+                for r_idx, row in enumerate(amazon_rows):
+                    if amount_str in row or amount_str_no_zero in row:
+                        row_str = ",".join(row)
+                        dates = re.findall(r'\d{4}-\d{2}-\d{2}', row_str)
+                        date_match = False
+                        for d_str in dates:
+                            try:
+                                if abs((pd.to_datetime(d_str) - c_date).days) <= 21: date_match = True; break
+                            except: pass
+                        if date_match:
+                            candidates = [f for f in row if len(f) > 20 and not re.search(r'\d{5}', f) and 'Amazon.com' not in f]
+                            if not candidates: candidates = [f for f in row if len(f) > 20]
+                            if candidates:
+                                candidates.sort(key=len, reverse=True)
+                                merged_df.at[i, 'Product_Name'] = candidates[0]
+                                amazon_rows.pop(r_idx)
+                                break
     return merged_df
 
 # ==============================================================================
@@ -543,8 +567,8 @@ def main():
     
     # 2. Ingest & Merge
     chase_df, latest_month = ingest_chase(chase_file, buffer)
-    amazon_df = ingest_amazon(amz_order, amz_refund)
-    merged_df = merge_amazon_data(chase_df, amazon_df)
+    amazon_df, raw_amazon_text = ingest_amazon(amz_order, amz_refund)
+    merged_df = merge_amazon_data(chase_df, amazon_df, raw_amazon_text)
     
     # 3. Map & Handle Exceptions
     mapped_df = map_transactions(merged_df, ledger_rows)
