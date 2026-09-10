@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.5 (Hybrid Raw-Text Fallback Parser)
+#Version: 3.6.6 (Heuristic Product Name Extraction)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.5"
+__version__ = "3.6.6"
 __date__ = "2026-09-10"
 
 import os
@@ -235,8 +235,19 @@ def merge_amazon_data(chase_df, amazon_df, raw_amazon_text):
                                 if abs((pd.to_datetime(d_str) - c_date).days) <= 21: date_match = True; break
                             except: pass
                         if date_match:
-                            candidates = [f for f in row if len(f) > 20 and not re.search(r'\d{5}', f) and 'Amazon.com' not in f]
-                            if not candidates: candidates = [f for f in row if len(f) > 20]
+                            def is_product(s):
+                                if len(s) < 5 or ' ' not in s: return False
+                                if re.search(r'\d{4}-\d{2}-\d{2}T', s): return False
+                                if re.search(r'United States', s, re.IGNORECASE): return False
+                                if re.search(r'\b[A-Z]{2}\s+\d{5}(?:-\d{4})?\b', s): return False
+                                if 'Amazon.com' in s: return False
+                                if s.startswith('UPS(') or s.startswith('USPS(') or s.startswith('AMZN_US(') or s.startswith('TBA'): return False
+                                return True
+                            
+                            candidates = [f for f in row if is_product(f)]
+                            if not candidates: 
+                                candidates = [f for f in row if len(f) > 5 and not re.search(r'\d{4}-\d{2}-\d{2}T', f) and 'Amazon.com' not in f and not re.search(r'\d{5}', f)]
+                            
                             if candidates:
                                 candidates.sort(key=len, reverse=True)
                                 merged_df.at[i, 'Product_Name'] = candidates[0]
