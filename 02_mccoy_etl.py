@@ -2,10 +2,10 @@
 #"""
 #McCoy PDF ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.1 (Explicit Intermediate State Naming)
+#Version: 3.6.2 (Intermediate Ledger Prefix Fix)
 #Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.1"
+__version__ = "3.6.2"
 __date__ = "2026-09-10"
 
 import os
@@ -42,12 +42,12 @@ def get_latest_file(directory, prefix, extension):
 
 def discover_files():
     mccoy_file = get_latest_file(INPUT_DIR, 'McCoy', '.pdf')
-    ledger_file = get_latest_file(CORE_DIR, 'Financial_Mapping_Ledger_Intermediate', '.txt')
+    ledger_file = get_latest_file(CORE_DIR, 'Intermediate_Mapping_Ledger', '.txt')
     payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_Chase', '.txt')
     const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
 
     if not mccoy_file: fatal_error("Missing McCoy PDF in 20_Statements_Current folder.")
-    if not ledger_file: fatal_error("Missing Financial_Mapping_Ledger_Intermediate in 00_CORE_Files folder.")
+    if not ledger_file: fatal_error("Missing Intermediate_Mapping_Ledger in 00_CORE_Files folder.")
     if not payload_file: fatal_error("Missing Ingestion_Expense_Payload_Chase in 00_CORE_Files folder.")
     if not const_file: fatal_error("Missing GEM_Financial_Ingestion_Constants in 00_CORE_Files folder.")
     
