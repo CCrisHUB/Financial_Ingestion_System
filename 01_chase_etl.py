@@ -1,11 +1,11 @@
 #01_chase_etl.py
 #"""
 #Chase ETL Pipeline
-#Date: 2026-09-10
-#Version: 3.6.7 (Seasonal Math Fix)
+#Date: 2026-09-11
+#Version: 3.6.8 (Master Orchestrator Loop)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.7"
+__version__ = "3.6.8"
 __date__ = "2026-09-11"
 
 import os
@@ -564,40 +564,56 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
     print(f"Saved updated Payload: {new_payload_filename}")
     print("="*80 + "\n")
 
-    run_mccoy = input("Do you want to automatically execute 02_mccoy_etl.py now? (Y/N): ").strip().upper()
-    if run_mccoy == 'Y':
-        print("\nLaunching McCoy ETL...\n")
-        subprocess.run(['python', '02_mccoy_etl.py'])
-
 def main():
-    print("Initializing Chase ETL Pipeline...")
-    
-    # 1. Setup & Load
-    chase_file, amz_order, amz_refund, ledger_file, payload_file, const_file = discover_files()
-    const_raw, categories, sys_labels = load_constants(const_file)
-    ledger_rows, accumulators, buffer = load_ledger(ledger_file)
-    hist_payload = load_payload(payload_file, categories)
-    
-    # 2. Ingest & Merge
-    chase_df, latest_month = ingest_chase(chase_file, buffer)
-    amazon_df, raw_amazon_text = ingest_amazon(amz_order, amz_refund)
-    merged_df = merge_amazon_data(chase_df, amazon_df, raw_amazon_text)
-    
-    # 3. Map & Handle Exceptions
-    mapped_df = map_transactions(merged_df, ledger_rows)
-    mapped_df, ledger_rows, new_cats, exception_indices = handle_exceptions(mapped_df, ledger_rows, categories, latest_month)
-    
-    # 4. State Updates
-    ledger_rows = update_hit_counts(mapped_df, ledger_rows, latest_month, exception_indices)
-    ledger_rows = cull_ledger(ledger_rows, categories, sys_labels, const_raw)
-    accumulators = calculate_accumulators(mapped_df, accumulators, categories, latest_month, buffer)
-    
-    # 5. Output
-    generate_and_save_files(
-        mapped_df, ledger_rows, accumulators, buffer, hist_payload, 
-        categories, new_cats, const_raw, latest_month, 
-        payload_file, ledger_file, const_file
-    )
-    
+    while True:
+        print("\n" + "="*80)
+        print("Initializing Chase ETL Pipeline...")
+        print("="*80)
+        
+        # 1. Setup & Load
+        chase_file, amz_order, amz_refund, ledger_file, payload_file, const_file = discover_files()
+        const_raw, categories, sys_labels = load_constants(const_file)
+        ledger_rows, accumulators, buffer = load_ledger(ledger_file)
+        hist_payload = load_payload(payload_file, categories)
+        
+        # 2. Ingest & Merge
+        chase_df, latest_month = ingest_chase(chase_file, buffer)
+        amazon_df, raw_amazon_text = ingest_amazon(amz_order, amz_refund)
+        merged_df = merge_amazon_data(chase_df, amazon_df, raw_amazon_text)
+        
+        # 3. Map & Handle Exceptions
+        mapped_df = map_transactions(merged_df, ledger_rows)
+        mapped_df, ledger_rows, new_cats, exception_indices = handle_exceptions(mapped_df, ledger_rows, categories, latest_month)
+        
+        # 4. State Updates
+        ledger_rows = update_hit_counts(mapped_df, ledger_rows, latest_month, exception_indices)
+        ledger_rows = cull_ledger(ledger_rows, categories, sys_labels, const_raw)
+        accumulators = calculate_accumulators(mapped_df, accumulators, categories, latest_month, buffer)
+        
+        # 5. Output
+        generate_and_save_files(
+            mapped_df, ledger_rows, accumulators, buffer, hist_payload, 
+            categories, new_cats, const_raw, latest_month, 
+            payload_file, ledger_file, const_file
+        )
+        
+        while True:
+            run_mccoy = input("\n\033[96mExecute 02_mccoy_etl.py now? (Y/N): \033[0m").strip().upper()
+            if run_mccoy in ['Y', 'N']: break
+            print("\033[91m[ERROR] Invalid input. Please enter 'Y' or 'N'.\033[0m")
+            
+        if run_mccoy == 'Y':
+            print("\nLaunching McCoy ETL...\n")
+            subprocess.run(['python', '02_mccoy_etl.py'])
+            
+        while True:
+            run_next = input("\n\033[96mProcess the next month's statements? (Y/N): \033[0m").strip().upper()
+            if run_next in ['Y', 'N']: break
+            print("\033[91m[ERROR] Invalid input. Please enter 'Y' or 'N'.\033[0m")
+            
+        if run_next == 'N':
+            print("\n\033[92mExiting Pipeline. Goodbye!\033[0m\n")
+            break
+
 if __name__ == "__main__":
     main()
