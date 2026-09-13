@@ -2,11 +2,11 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-10
-#Version: 3.6.6 (Heuristic Product Name Extraction)
+#Version: 3.6.7 (Seasonal Math Fix)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.6"
-__date__ = "2026-09-10"
+__version__ = "3.6.7"
+__date__ = "2026-09-11"
 
 import os
 import re
@@ -510,13 +510,15 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
         cat_df = valid_df[valid_df['Mapped_Label'] == cat]
         if not cat_df.empty:
             monthly_sum = -cat_df.groupby(cat_df['Date'].dt.strftime('%b'))['Amount'].sum()
-            new_seas = {m: f"${a:.2f}" for m, a in monthly_sum.items()}
-            if cat in historical_payload:
+            new_seas = {m: float(a) for m, a in monthly_sum.items()}
+            if cat in historical_payload and historical_payload[cat] != "[Pending: $0.00]":
                 old_seas_str = historical_payload[cat].strip('[]')
-                old_seas = {k.strip(): v.strip() for k, v in (item.split(':') for item in old_seas_str.split(',') if ':' in item)}
-                old_seas.update(new_seas)
-                new_seas = old_seas
-            seas_str = ", ".join([f"{m}: {a}" for m, a in new_seas.items()])
+                if old_seas_str:
+                    old_seas = {k.strip(): float(v.strip().replace('$', '')) for k, v in (item.split(':') for item in old_seas_str.split(',') if ':' in item)}
+                    for m, val in new_seas.items():
+                        old_seas[m] = old_seas.get(m, 0.0) + val
+                    new_seas = old_seas
+            seas_str = ", ".join([f"{m}: ${a:.2f}" for m, a in new_seas.items()])
             historical_payload[cat] = f"[{seas_str}]"
         payload_out += f"  * {cat}: {historical_payload[cat]}\n"
     payload_out += "# [END COPY HERE]\n================================================================================\n"
