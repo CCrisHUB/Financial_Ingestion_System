@@ -2,10 +2,10 @@
 #"""
 #Chase ETL Pipeline
 #Date: 2026-09-11
-#Version: 3.6.8 (Master Orchestrator Loop)
+#Version: 3.7.0 (Unified Directory Schema)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.8"
+__version__ = "3.7.0"
 __date__ = "2026-09-11"
 
 import os
@@ -18,9 +18,14 @@ import io
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# --- DIRECTORY CONFIGURATION ---
-CORE_DIR = '00_CORE_Files'
-INPUT_DIR = '20_Statements_Current'
+# ==============================================================================
+# MASTER CONFIGURATION & DIRECTORY STRUCTURE
+# ==============================================================================
+BASE_DIR = r"C:\10_Projects\Financial_Ingestion_System"
+
+# Active Directories
+DIR_CORE_ACTIVE = os.path.join(BASE_DIR, "00_CORE_Files")
+DIR_STATEMENTS_ACTIVE = os.path.join(BASE_DIR, "20_Statements_Current")
 
 def fatal_error(msg):
     print("\n" + "="*80)
@@ -53,12 +58,12 @@ def get_keyword_file(directory, keyword, extension):
 
 def discover_files():
     while True:
-        chase_file = get_latest_file(INPUT_DIR, 'Chase', '.csv')
-        amz_order = get_keyword_file(INPUT_DIR, 'order', '.csv')
-        amz_refund = get_keyword_file(INPUT_DIR, 'refund', '.csv')
-        ledger_file = get_latest_file(CORE_DIR, 'Financial_Mapping_Ledger', '.txt')
-        payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_FINAL', '.txt')
-        const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
+        chase_file = get_latest_file(DIR_STATEMENTS_ACTIVE, 'Chase', '.csv')
+        amz_order = get_keyword_file(DIR_STATEMENTS_ACTIVE, 'order', '.csv')
+        amz_refund = get_keyword_file(DIR_STATEMENTS_ACTIVE, 'refund', '.csv')
+        ledger_file = get_latest_file(DIR_CORE_ACTIVE, 'Financial_Mapping_Ledger', '.txt')
+        payload_file = get_latest_file(DIR_CORE_ACTIVE, 'Ingestion_Expense_Payload_FINAL', '.txt')
+        const_file = get_latest_file(DIR_CORE_ACTIVE, 'GEM_Financial_Ingestion_Constants', '.txt')
 
         missing = []
         if not chase_file: missing.append("Chase CSV in 20_Statements_Current")
@@ -541,8 +546,8 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
     ledger_out += json.dumps(processed_buffer, indent=2) + "\n"
 
     # --- SAVE FILES ---
-    with open(os.path.join(CORE_DIR, new_payload_filename), 'w', encoding='utf-8') as f: f.write(payload_out)
-    with open(os.path.join(CORE_DIR, new_ledger_filename), 'w', encoding='utf-8') as f: f.write(ledger_out)
+    with open(os.path.join(DIR_CORE_ACTIVE, new_payload_filename), 'w', encoding='utf-8') as f: f.write(payload_out)
+    with open(os.path.join(DIR_CORE_ACTIVE, new_ledger_filename), 'w', encoding='utf-8') as f: f.write(ledger_out)
 
     # --- CONSTANTS ---
     if new_cats:
@@ -554,7 +559,7 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
         c_match = re.search(r'_v(\d+)\.txt', os.path.basename(const_file))
         c_ver = int(c_match.group(1)) + 1 if c_match else 1
         new_const_filename = f"GEM_Financial_Ingestion_Constants_{today_str}_v{c_ver}.txt"
-        with open(os.path.join(CORE_DIR, new_const_filename), 'w', encoding='utf-8') as f:
+        with open(os.path.join(DIR_CORE_ACTIVE, new_const_filename), 'w', encoding='utf-8') as f:
             f.write(const_raw)
         print(f"Saved updated Constants: {new_const_filename}")
 
