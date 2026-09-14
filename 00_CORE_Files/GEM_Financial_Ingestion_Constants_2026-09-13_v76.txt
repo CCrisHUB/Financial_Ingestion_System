@@ -1,0 +1,86 @@
+GEM_Financial_Ingestion_Constants_2026-09-11_v75.txt
+================================================================================
+FINANCIAL STATEMENT INGESTION CONSTANTS & TARGET TAXONOMY
+Date: 2026-09-11 (Version 75)
+Role: Authoritative Expense Categories & PDF Parsing Regex Patterns
+File Name: GEM_Financial_Ingestion_Constants_2026-09-11_v75.txt
+================================================================================
+
+1. AUTHORITATIVE TARGET EXPENSE CATEGORIES (EXTRACTED FROM RETIREMENT GEM)
+--------------------------------------------------------------------------------
+The Ingestion Gem is strictly limited to mapping transactions to the exact 
+string values listed below. 
+
+  - CONST_NON_LINEAR_EXPENSES [Type: ann]:
+    (Schema Target: [Due_Month: M] [Last_Paid_Amount: $X])
+    * Property_Tax
+    * HOA_Dues
+    * Ride_With_GPS
+    * JRNY_MX_Trainer
+    * Cloud_Storage_IDrive
+    * Pandora
+    * Ring_Cameras
+    * Sapphire_Membership
+    * AAA
+    * IFTTT
+
+  - CONST_STATIC_MONTHLY_BILLS [Type: fix]:
+    (Schema Target: [Amount: $X])
+    * Pool_Maintenance
+    * Lawn_Service
+    * Internet_Service
+    * T-Mobile_Cellular
+    * Spotify
+    * Safetouch_Alarm
+
+  - CONST_VARIABLE_SPEND [Type: var]:
+    (Schema Target: [Historical_Monthly_Average: $X])
+    * Entertainment
+    * Food
+    * Garden_Purchases
+    * Electronic_Equipment
+    * Car
+    * Shipping
+    * Kindle_Books
+    * House_Maintenance
+    * Hygene
+    * Supplements
+    * Software
+    * Legal
+    * DVD
+    * Medication
+    * Cookware
+    * Photo
+    * Dental
+    * Clothes
+    * Office_Supplies
+    * Outdoors
+    * Fitness
+    * Website
+    * Occasional_Landscaping
+    * Car_Umbrella_Insurance
+    * Termite_Lawn
+
+  - CONST_SEASONAL_MONTHLY_BILLS [Type: seas]:
+    (Schema Target: [Jan: $X, Feb: $Y, ... Dec:$Z])
+    * Electric_Bill
+    * OUC_Water_Bill
+
+  - CONST_MAX_LEDGER_ROWS = 1000
+
+  - SYSTEM & EXCLUSION LABELS (INTERNAL ETL ONLY):
+    * [IGNORE_TRANSFER] (Credit card payments, account transfers)
+    * [IGNORE_INCOME] (Fixed income processed by Retirement Gem)
+    * [REQUIRES_MANUAL_REVIEW] (Checks, Amazon, mixed retail)
+    * [IGNORE_ANOMALY_OR_DISCRETIONARY] (Catastrophic repair, CapEx, Black Swan
+      events, Funded luxury travel, non-baseline hobbies)
+
+--------------------------------------------------------------------------------
+
+2. PDF EXTRACTION REGEX PATTERNS (MCCOY FCU SPECIFIC)
+--------------------------------------------------------------------------------
+  - REGEX_DATE: r"^\d{2}\s?[A-Za-z]{3}\*?"
+  - REGEX_AMOUNT: r"-?\$?\d{1,3}(?:,\d{3})*\.\d{2}"
+  - REGEX_CHECK: r"(?i)(?:check|draft)\s+(\d{3,5})"
+
+================================================================================
