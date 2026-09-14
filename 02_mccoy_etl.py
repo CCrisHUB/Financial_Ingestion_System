@@ -1,26 +1,41 @@
 #02_mccoy_etl.py
 #"""
 #McCoy PDF ETL Pipeline
-#Date: 2026-09-10
-#Version: 3.6.4 (Seasonal Math Fix)
+#Date: 2026-09-11
+#Version: 3.6.5 (Unified Directory Schema & Deep Archive Sweep)
 #Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.4"
+__version__ = "3.6.5"
 __date__ = "2026-09-11"
 
 import os
 import re
 import json
 import shutil
+import time
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
 
-# --- DIRECTORY CONFIGURATION ---
-CORE_DIR = '00_CORE_Files'
-INPUT_DIR = '20_Statements_Current'
-ARCHIVE_STATEMENTS_DIR = '26_OLD_Statements'
-ARCHIVE_CORE_DIR = '05_OLD_Core_Files'
+# ==============================================================================
+# MASTER CONFIGURATION & DIRECTORY STRUCTURE
+# ==============================================================================
+BASE_DIR = r"C:\10_Projects\Financial_Ingestion_System"
+
+# Active Directories
+DIR_CORE_ACTIVE = os.path.join(BASE_DIR, "00_CORE_Files")
+DIR_STATEMENTS_ACTIVE = os.path.join(BASE_DIR, "20_Statements_Current")
+
+# Archive Directories (Sweep Sources)
+DIR_CORE_ARCHIVE = os.path.join(BASE_DIR, "05_OLD_Core_Files")
+DIR_STATEMENTS_ARCHIVE = os.path.join(BASE_DIR, "26_OLD_Statements")
+
+# Deep Archive Directories (Sweep Destinations)
+DEEP_ARCHIVE_CORE = r"C:\Archive\Financial_Ingestion_System\05_OLD_Core_Files"
+DEEP_ARCHIVE_STATEMENTS = r"C:\Archive\Financial_Ingestion_System\26_OLD_Statements"
+
+for directory in [DIR_CORE_ACTIVE, DIR_STATEMENTS_ACTIVE, DIR_CORE_ARCHIVE, DIR_STATEMENTS_ARCHIVE]:
+    os.makedirs(directory, exist_ok=True)
 
 def fatal_error(msg):
     print("\n" + "="*80)
@@ -32,6 +47,35 @@ def fatal_error(msg):
 # 1. FILE DISCOVERY & PARSING FUNCTIONS
 # ==============================================================================
 
+def deep_archive_sweep(source_dir: str, archive_dir: str, days_old: int = 30):
+    """Scans source_dir and moves files older than days_old to archive_dir."""
+    if not os.path.exists(source_dir):
+        return
+        
+    os.makedirs(archive_dir, exist_ok=True)
+    current_time = time.time()
+    threshold_seconds = days_old * 86400 # 86400 seconds in a 24-hour period
+    
+    files_moved = 0
+    for filename in os.listdir(source_dir):
+        file_path = os.path.join(source_dir, filename)
+        
+        if os.path.isfile(file_path):
+            file_age_seconds = current_time - os.path.getmtime(file_path)
+            
+            if file_age_seconds > threshold_seconds:
+                dest_path = os.path.join(archive_dir, filename)
+                try:
+                    if os.path.exists(dest_path):
+                        os.remove(dest_path)
+                    shutil.move(file_path, dest_path)
+                    files_moved += 1
+                except Exception as e:
+                    print(f"\033[91m[WARNING] Failed to deep-archive {filename}: {e}\033[0m")
+                    
+    if files_moved > 0:
+        print(f"\033[96m[System] Deep Archive: Moved {files_moved} file(s) older than {days_old} days from {os.path.basename(source_dir)}.\033[0m")
+
 def get_latest_file(directory, prefix, extension):
     files = [f for f in os.listdir(directory) if f.startswith(prefix) and f.endswith(extension)]
     if not files: return None
@@ -42,10 +86,10 @@ def get_latest_file(directory, prefix, extension):
 
 def discover_files():
     while True:
-        mccoy_file = get_latest_file(INPUT_DIR, 'McCoy', '.pdf')
-        ledger_file = get_latest_file(CORE_DIR, 'Intermediate_Mapping_Ledger', '.txt')
-        payload_file = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_Chase', '.txt')
-        const_file = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
+        mccoy_file = get_latest_file(DIR_STATEMENTS_ACTIVE, 'McCoy', '.pdf')
+        ledger_file = get_latest_file(DIR_CORE_ACTIVE, 'Intermediate_Mapping_Ledger', '.txt')
+        payload_file = get_latest_file(DIR_CORE_ACTIVE, 'Ingestion_Expense_Payload_Chase', '.txt')
+        const_file = get_latest_file(DIR_CORE_ACTIVE, 'GEM_Financial_Ingestion_Constants', '.txt')
 
         missing = []
         if not mccoy_file: missing.append("McCoy PDF in 20_Statements_Current")
@@ -504,8 +548,8 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
     ledger_out += json.dumps(processed_buffer, indent=2) + "\n"
 
     # --- SAVE FILES ---
-    with open(os.path.join(CORE_DIR, new_payload_filename), 'w', encoding='utf-8') as f: f.write(payload_out)
-    with open(os.path.join(CORE_DIR, new_ledger_filename), 'w', encoding='utf-8') as f: f.write(ledger_out)
+    with open(os.path.join(DIR_CORE_ACTIVE, new_payload_filename), 'w', encoding='utf-8') as f: f.write(payload_out)
+    with open(os.path.join(DIR_CORE_ACTIVE, new_ledger_filename), 'w', encoding='utf-8') as f: f.write(ledger_out)
 
     # --- CONSTANTS ---
     if new_cats:
@@ -517,7 +561,7 @@ def generate_and_save_files(df, ledger_rows, accumulators, processed_buffer, his
         c_match = re.search(r'_v(\d+)\.txt', os.path.basename(const_file))
         c_ver = int(c_match.group(1)) + 1 if c_match else 1
         new_const_filename = f"GEM_Financial_Ingestion_Constants_{today_str}_v{c_ver}.txt"
-        with open(os.path.join(CORE_DIR, new_const_filename), 'w', encoding='utf-8') as f:
+        with open(os.path.join(DIR_CORE_ACTIVE, new_const_filename), 'w', encoding='utf-8') as f:
             f.write(const_raw)
         print(f"Saved updated Constants: {new_const_filename}")
 
@@ -532,33 +576,38 @@ def perform_garbage_collection(mccoy_file):
     print("INITIATING ATOMIC GARBAGE COLLECTION...")
     
     # 1. Move Statements (Chase CSVs and McCoy PDF)
-    chase_files = [f for f in os.listdir(INPUT_DIR) if f.startswith('Chase') and f.endswith('.csv')]
+    chase_files = [f for f in os.listdir(DIR_STATEMENTS_ACTIVE) if f.startswith('Chase') and f.endswith('.csv')]
     for cf in chase_files:
-        shutil.move(os.path.join(INPUT_DIR, cf), os.path.join(ARCHIVE_STATEMENTS_DIR, cf))
+        shutil.move(os.path.join(DIR_STATEMENTS_ACTIVE, cf), os.path.join(DIR_STATEMENTS_ARCHIVE, cf))
         print(f"Archived Statement: {cf}")
         
     if mccoy_file and os.path.exists(mccoy_file):
-        shutil.move(mccoy_file, os.path.join(ARCHIVE_STATEMENTS_DIR, os.path.basename(mccoy_file)))
+        shutil.move(mccoy_file, os.path.join(DIR_STATEMENTS_ARCHIVE, os.path.basename(mccoy_file)))
         print(f"Archived Statement: {os.path.basename(mccoy_file)}")
         
     # 2. Move Core Files (Keep only the absolute newest of each type)
-    latest_ledger = get_latest_file(CORE_DIR, 'Financial_Mapping_Ledger', '.txt')
-    latest_payload = get_latest_file(CORE_DIR, 'Ingestion_Expense_Payload_FINAL', '.txt')
-    latest_const = get_latest_file(CORE_DIR, 'GEM_Financial_Ingestion_Constants', '.txt')
+    latest_ledger = get_latest_file(DIR_CORE_ACTIVE, 'Financial_Mapping_Ledger', '.txt')
+    latest_payload = get_latest_file(DIR_CORE_ACTIVE, 'Ingestion_Expense_Payload_FINAL', '.txt')
+    latest_const = get_latest_file(DIR_CORE_ACTIVE, 'GEM_Financial_Ingestion_Constants', '.txt')
     
     keep_files = set()
     if latest_ledger: keep_files.add(os.path.basename(latest_ledger))
     if latest_payload: keep_files.add(os.path.basename(latest_payload))
     if latest_const: keep_files.add(os.path.basename(latest_const))
     
-    core_files = [f for f in os.listdir(CORE_DIR) if f.endswith('.txt')]
+    core_files = [f for f in os.listdir(DIR_CORE_ACTIVE) if f.endswith('.txt')]
     for cf in core_files:
         if cf not in keep_files:
-            shutil.move(os.path.join(CORE_DIR, cf), os.path.join(ARCHIVE_CORE_DIR, cf))
+            shutil.move(os.path.join(DIR_CORE_ACTIVE, cf), os.path.join(DIR_CORE_ARCHIVE, cf))
             print(f"Archived Core File: {cf}")
             
     print("GARBAGE COLLECTION COMPLETE.")
     print("="*80 + "\n")
+    
+    # 3. Deep Archive Sweep
+    print(f"\n\033[96m[System] Executing Deep Archive Sweep...\033[0m")
+    deep_archive_sweep(DIR_CORE_ARCHIVE, DEEP_ARCHIVE_CORE, days_old=30)
+    deep_archive_sweep(DIR_STATEMENTS_ARCHIVE, DEEP_ARCHIVE_STATEMENTS, days_old=30)
 
 def main():
     print("Initializing McCoy PDF ETL Pipeline...")
@@ -591,7 +640,7 @@ def main():
         payload_file, ledger_file, const_file
     )
     
-    # 6. Atomic Garbage Collection
+    # 6. Atomic Garbage Collection & Deep Archive Sweep
     perform_garbage_collection(mccoy_file)
 
 if __name__ == "__main__":
