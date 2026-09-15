@@ -1,12 +1,12 @@
 #02_mccoy_etl.py
 #"""
 #McCoy PDF ETL Pipeline
-#Date: 2026-09-11
-#Version: 3.6.5 (Unified Directory Schema & Deep Archive Sweep)
+#Date: 2026-09-16
+#Version: 3.7.0 (Centralized .env Pathing Architecture)
 #Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.6.5"
-__date__ = "2026-09-11"
+__version__ = "3.7.0"
+__date__ = "2026-09-16"
 
 import os
 import re
@@ -16,23 +16,28 @@ import time
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+from dotenv import load_dotenv
 
 # ==============================================================================
-# MASTER CONFIGURATION & DIRECTORY STRUCTURE
+# MASTER CONFIGURATION & DIRECTORY STRUCTURE (FINANCIAL INGESTION SYSTEM)
 # ==============================================================================
-BASE_DIR = r"C:\10_Projects\Financial_Ingestion_System"
+load_dotenv()  # Load environment variables globally
+
+# Fallbacks provided to prevent crashes if .env is missing
+FIS_ROOT = os.environ.get("FIS_ROOT", r"C:\OneDrive\10_Projects\Financial_Ingestion_System")
+FIS_DEEP_ARCHIVE_ROOT = os.environ.get("FIS_DEEP_ARCHIVE_ROOT", r"C:\Archive\Financial_Ingestion_System")
 
 # Active Directories
-DIR_CORE_ACTIVE = os.path.join(BASE_DIR, "00_CORE_Files")
-DIR_STATEMENTS_ACTIVE = os.path.join(BASE_DIR, "20_Statements_Current")
+DIR_CORE_ACTIVE = os.path.join(FIS_ROOT, "00_CORE_Files")
+DIR_STATEMENTS_ACTIVE = os.path.join(FIS_ROOT, "20_Statements_Current")
 
 # Archive Directories (Sweep Sources)
-DIR_CORE_ARCHIVE = os.path.join(BASE_DIR, "05_OLD_Core_Files")
-DIR_STATEMENTS_ARCHIVE = os.path.join(BASE_DIR, "26_OLD_Statements")
+DIR_CORE_ARCHIVE = os.path.join(FIS_ROOT, "05_OLD_Core_Files")
+DIR_STATEMENTS_ARCHIVE = os.path.join(FIS_ROOT, "26_OLD_Statements")
 
 # Deep Archive Directories (Sweep Destinations)
-DEEP_ARCHIVE_CORE = r"C:\Archive\Financial_Ingestion_System\05_OLD_Core_Files"
-DEEP_ARCHIVE_STATEMENTS = r"C:\Archive\Financial_Ingestion_System\26_OLD_Statements"
+DEEP_ARCHIVE_CORE = os.path.join(FIS_DEEP_ARCHIVE_ROOT, "05_OLD_Core_Files")
+DEEP_ARCHIVE_STATEMENTS = os.path.join(FIS_DEEP_ARCHIVE_ROOT, "26_OLD_Statements")
 
 for directory in [DIR_CORE_ACTIVE, DIR_STATEMENTS_ACTIVE, DIR_CORE_ARCHIVE, DIR_STATEMENTS_ARCHIVE]:
     os.makedirs(directory, exist_ok=True)
