@@ -1,12 +1,12 @@
 #01_chase_etl.py
 #"""
 #Chase ETL Pipeline
-#Date: 2026-09-11
-#Version: 3.7.0 (Unified Directory Schema)
+#Date: 2026-09-16
+#Version: 3.7.1 (Unified Directory Schema - OneDrive Migration)
 #Role: Ingests Chase CSVs, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.7.0"
-__date__ = "2026-09-11"
+__version__ = "3.7.1"
+__date__ = "2026-09-16"
 
 import os
 import re
@@ -21,11 +21,20 @@ from dateutil.relativedelta import relativedelta
 # ==============================================================================
 # MASTER CONFIGURATION & DIRECTORY STRUCTURE
 # ==============================================================================
-BASE_DIR = r"C:\10_Projects\Financial_Ingestion_System"
+FIS_ROOT = r"C:\OneDrive\10_Projects\Financial_Ingestion_System"
+FIS_DEEP_ARCHIVE_ROOT = r"C:\Archive\Financial_Ingestion_System"
 
 # Active Directories
-DIR_CORE_ACTIVE = os.path.join(BASE_DIR, "00_CORE_Files")
-DIR_STATEMENTS_ACTIVE = os.path.join(BASE_DIR, "20_Statements_Current")
+DIR_CORE_ACTIVE = os.path.join(FIS_ROOT, "00_CORE_Files")
+DIR_STATEMENTS_ACTIVE = os.path.join(FIS_ROOT, "20_Statements_Current")
+
+# Archive Directories (Sweep Sources)
+DIR_CORE_ARCHIVE = os.path.join(FIS_ROOT, "05_OLD_Core_Files")
+DIR_STATEMENTS_ARCHIVE = os.path.join(FIS_ROOT, "26_OLD_Statements")
+
+# Deep Archive Directories (Sweep Destinations)
+DEEP_ARCHIVE_CORE = os.path.join(FIS_DEEP_ARCHIVE_ROOT, "05_OLD_Core_Files")
+DEEP_ARCHIVE_STATEMENTS = os.path.join(FIS_DEEP_ARCHIVE_ROOT, "26_OLD_Statements")
 
 def fatal_error(msg):
     print("\n" + "="*80)
