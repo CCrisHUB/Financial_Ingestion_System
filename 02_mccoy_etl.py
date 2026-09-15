@@ -2,10 +2,10 @@
 #"""
 #McCoy PDF ETL Pipeline
 #Date: 2026-09-16
-#Version: 3.7.0 (Centralized .env Pathing Architecture)
+#Version: 3.7.1 (Avenue B Purity - Removed dotenv dependency)
 #Role: Ingests McCoy PDFs, extracts checking withdrawals, maps transactions, and updates accumulators.
 #"""
-__version__ = "3.7.0"
+__version__ = "3.7.1"
 __date__ = "2026-09-16"
 
 import os
@@ -16,16 +16,12 @@ import time
 import pandas as pd
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
-from dotenv import load_dotenv
 
 # ==============================================================================
 # MASTER CONFIGURATION & DIRECTORY STRUCTURE (FINANCIAL INGESTION SYSTEM)
 # ==============================================================================
-load_dotenv()  # Load environment variables globally
-
-# Fallbacks provided to prevent crashes if .env is missing
-FIS_ROOT = os.environ.get("FIS_ROOT", r"C:\OneDrive\10_Projects\Financial_Ingestion_System")
-FIS_DEEP_ARCHIVE_ROOT = os.environ.get("FIS_DEEP_ARCHIVE_ROOT", r"C:\Archive\Financial_Ingestion_System")
+FIS_ROOT = r"C:\OneDrive\10_Projects\Financial_Ingestion_System"
+FIS_DEEP_ARCHIVE_ROOT = r"C:\Archive\Financial_Ingestion_System"
 
 # Active Directories
 DIR_CORE_ACTIVE = os.path.join(FIS_ROOT, "00_CORE_Files")
